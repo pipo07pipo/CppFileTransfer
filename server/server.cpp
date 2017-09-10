@@ -5,9 +5,16 @@
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/types.h>
- 
+#include <unistd.h>
+#include <iostream>
+#include <fstream>
+#include <streambuf>
+#include "md5.h"
 #define PORT 31337
- 
+#define TO_STRING(val) #val
+
+using namespace std;
+
 int parseARGS(char **args, char *line){
 int tmp=0;
 args[tmp] = strtok( line, ":" );
@@ -15,7 +22,7 @@ while ( (args[++tmp] = strtok(NULL, ":" ) ) != NULL );
 return tmp - 1;
 }
  
-int main()
+int main(int argc, char *argv[])
 {
     char *header[4096];
     int listenSOCKET, connectSOCKET;
@@ -23,16 +30,16 @@ int main()
     struct sockaddr_in clientADDRESS, serverADDRESS;
     char recvBUFF[4096];
     char *filename, *filesize;
-    FILE * recvFILE;
+    //FILE * recvFILE;
     int received = 0;
     char tempstr[4096];
  
-    int count1=1,count2=1, percent;
+    int nextPercent=1,currentPercent=1, percent;
  
     listenSOCKET = socket(AF_INET, SOCK_STREAM, 0);
     if (listenSOCKET < 0) {
         printf("Cannot create socket\n");
-        //close(listenSOCKET);
+        close(listenSOCKET);
         return 1;
     }
  
@@ -42,7 +49,7 @@ int main()
    
     if (bind(listenSOCKET, (struct sockaddr *) &serverADDRESS, sizeof(serverADDRESS)) < 0) {
         printf("Cannot bind socket\n");
-        //close(listenSOCKET);
+        close(listenSOCKET);
         return 1;
     }
  
@@ -51,7 +58,7 @@ int main()
     connectSOCKET = accept(listenSOCKET, (struct sockaddr *) &clientADDRESS, &clientADDRESSLENGTH);
     if (connectSOCKET < 0) {
         printf("Cannot accept connection\n");
-       // close(listenSOCKET);
+        close(listenSOCKET);
         return 1;
     }
     while(1){    
@@ -63,29 +70,41 @@ int main()
                 filesize = header[2];
             }
             recvBUFF[0] = 0;
-            recvFILE = fopen ( filename,"w" );
+            //recvFILE = fopen ( filename,"w" );
+            std::fstream recvFILE;
+            recvFILE.open (filename, std::fstream::in | std::fstream::out | std::fstream::app);
             percent = atoi( filesize ) / 100;
             while(1){
                 if( recv(connectSOCKET, recvBUFF, 1, 0) != 0 ) {
-                    fwrite (recvBUFF , sizeof(recvBUFF[0]) , 1 , recvFILE );
- 
-                    if( count1 == count2 ) {
+                    //fwrite (recvBUFF , sizeof(recvBUFF[0]) , 1 , recvFILE );
+                    recvFILE.write(recvBUFF,sizeof(recvBUFF[0]));
+                    if( nextPercent == currentPercent ) {
                         printf("33[0;0H"); //move cursor to 0, 0
                         printf( "\33[2J"); //clear line
                         printf("Filename: %s\n", filename);
                         printf("Filesize: %d Kb\n", atoi(filesize) / 1024);
-                        printf("Percent : %d%% ( %d Kb)\n",count1 / percent ,count1 / 1024);
-                        count1+=percent;
+                        printf("Percent : %d%% ( %d Kb)\n",nextPercent / percent ,nextPercent / 1024);
+                        nextPercent+=percent;
                     }
-                    count2++;
+                    currentPercent++;
                     received++;
                     recvBUFF[0] = 0;
                 } else {
-                //close(listenSOCKET);
-                return 0;
+                    std::string str;
+                    recvFILE.seekg(0,std::ios::end);
+                    str.reserve(recvFILE.tellg());
+                    recvFILE.seekg(0,std::ios::beg);
+                    recvFILE.close();
+                    str.assign( (std::istreambuf_iterator<char>(recvFILE) ),
+                                (std::istreambuf_iterator<char>()    )  );
+                    cout << "md5 of this file : " << md5(str) << endl;
+
+                    close(listenSOCKET);
+                    return 0;
             }
             }
-        //close(listenSOCKET);
+            
+        close(listenSOCKET);
         } else {
         printf("Client dropped connection\n");
         }
